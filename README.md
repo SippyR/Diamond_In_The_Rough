@@ -1,18 +1,51 @@
 # Diamond in the Rough
 
-A daily baseball trivia game where users try to build the optimal team by guessing players who fit specific statistical and franchise categories. It is a full-stack web application featuring player autocomplete and live WAR (Wins Above Replacement) scoring, with a PostgreSQL database hosted on Neon, a Python Flask API hosted on Render, and a vanilla HTML/CSS/JS frontend hosted on GitHub Pages.
+**Play the game live:** [Diamond in the Rough](https://sippyr.github.io/Diamond_In_The_Rough/?utm_source=gemini)
 
-## Features
+## Project Overview
 
-*   **Daily Seeded Puzzles:** Uses a Mulberry32 seeded randomizer tied to the calendar date so all players globally face the exact same grid on any given day.
-*   **Live Player Autocomplete:** Queries the backend database in real-time as the user types to prevent spelling errors and streamline the guessing process.
-*   **Dynamic WAR Scoring & Badges:** Calculates the submitted player's WAR against the highest possible WAR for that specific category, awarding a percentage-based badge (and a gold badge for a 100% optimal guess).
-*   **Hard Mode:** A toggleable switch that restricts players to a single guess per square. Incorrect guesses lock the square with a red "MISSED" penalty.
-*   **Optimal Lineup Reveal:** At the end of the game (or if the user clicks "Give Up"), players can fetch the mathematically best possible lineup from the database.
-*   **Shareable Emoji Grid:** Generates an Immaculate Grid-style emoji layout formatted for the clipboard to easily share daily results.
+**Diamond in the Rough** is a daily baseball trivia game inspired by Wordle and the Immaculate Grid. Players are presented with a baseball field where they must identify a player and a specific season that fits a given statistical or team-based category for each of the 9 positions.
 
-## Architecture & Tech Stack
+The ultimate goal is to identify the player/season combinations that yield the highest **Wins Above Replacement (WAR)** for each square.
 
-*   **Frontend (Static Web Hosting):** Vanilla HTML5, CSS3, and JavaScript deployed on **GitHub Pages**. Handles state management, daily seed generation, UI state transitions, and API interactions.
-*   **Backend (REST API):** Python **Flask** application deployed on **Render** (via Gunicorn). Handles data validation, database connection pooling, and CORS management.
-*   **Database (Cloud Relational):** **PostgreSQL** hosted on **Neon.tech**. Stores historical baseball statistics, franchise histories, and MLBAM IDs for rendering live player headshots directly from MLB.com.
+### Key Features
+
+* **Daily Categories:** Just like Wordle, the categories change every day for all players using a daily seeded random generator.
+
+* **WAR Optimization:** Guessing a correct player grants you their WAR for that season. Finding the absolute best possible answer (Max WAR) for a square highlights it in blue.
+
+* **Hard Mode:** A toggleable challenge that restricts players to only one guess per position. Miss it, and the square is locked!
+
+* **Social Sharing:** Share your daily results and total WAR score with friends using a generated emoji grid.
+
+## Tech Stack
+
+This project was built with a full-stack approach across multiple cloud hosting platforms:
+
+* **Frontend:** HTML, CSS, and Vanilla JavaScript. Hosted on **GitHub Pages**. Handles state management, daily seed generation, and UI/UX interactions.
+
+* **Backend:** Python **Flask** API. Hosted on **Render**. Processes guesses, calculates WAR percentages, queries for the optimal daily lineup, and serves autocomplete suggestions.
+
+* **Database:** **PostgreSQL** hosted on **neon.tech**.
+
+## Data Integration & Pipeline
+
+A significant challenge in this project was acquiring, cleaning, and merging baseball data from three distinct sources to create a seamless experience:
+
+1. **The Baseball Scholar:** Base historical player statistics.
+
+2. **Lahman Baseball Database:** Merged to acquire specific team data for each player/season, including complex logic for traded players.
+
+3. **MLB Advanced Media (MLBAM):** Integrated via Chadwick Register lookup tables. By mapping Baseball-Reference IDs to MLBAM IDs, the frontend dynamically fetches and displays official player headshots upon a successful guess.
+
+*(See `dataCleanup.py` for the normalization and merging logic).*
+
+## Future Work
+
+* **Mobile Optimization:** Improve UI/UX responsiveness for mobile devices.
+
+* **Expanded Categories:** Add new trivia requirements such as "Won a World Series", "MVP", or specific playoff stats.
+
+* **Endless Mode:** Allow users to shuffle the board and play continuous, randomized games without waiting for the next day.
+
+* **Leaderboards:** Implement a way to see how your score ranks against all other daily players.
