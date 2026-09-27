@@ -4,20 +4,20 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import psycopg2
 from psycopg2.extras import RealDictCursor
+import urllib.parse
 
 load_dotenv()
 
-# --- DATABASE CONNECTION ---
-# Check if we are on Render (using DATABASE_URL) or local (using .env)
+# Check if we are on Render or Local
 database_url = os.environ.get("DATABASE_URL")
 
 try:
     if database_url:
-        # Connect using the single Neon string provided by Render Environment Variables
-        conn = psycopg2.connect(database_url)
+        # Create a connection pool for Render
+        db_pool = psycopg2.pool.SimpleConnectionPool(1, 10, database_url)
     else:
-        # Fallback for your local development setup
-        conn = psycopg2.connect(
+        # Fallback pool for local development
+        db_pool = psycopg2.pool.SimpleConnectionPool(1, 10,
             dbname=os.getenv("DB_NAME"),
             user=os.getenv("DB_USER"),
             password=os.getenv("DB_PASSWORD"),
@@ -25,114 +25,132 @@ try:
             port=os.getenv("DB_PORT")
         )
 except Exception as e:
-    print(f"Database connection failed: {e}")
+    print(f"Database connection pool failed: {e}")
+
+# Helper function to get a connection from the pool
+def get_db_connection():
+    return db_pool.getconn()
+
+# Helper function to return the connection to the pool
+def release_db_connection(conn):
+    db_pool.putconn(conn)
 
 def validate_guess(name, season, position, category, subcategory):
-    # 1. Grab all player columns
-    with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-        query = """
-            SELECT * 
-            FROM player_stats 
-            WHERE LOWER(name_ascii) = LOWER(%s) 
-              AND season = %s 
-              AND primary_position = %s;
-        """
-        cursor.execute(query, (name.strip(), int(season), position.strip().upper()))
-        player = cursor.fetchone()
 
-    if not player:
-        return {
-            "valid": False, 
-            "message": f"No record of {name} playing {position.upper()} in {season}."
-        }
+    conn = get_db_connection()
 
-    # --- 2. Category: Team ---
-    if category == "Team":
-        player_teams = player['team'].split('/') if player['team'] else []
-        target_team = str(subcategory).strip().upper()
-
-        if target_team not in player_teams and target_team != player['team']:
-            return {"valid": False, "message": f"{player['name_ascii']} did not play for {target_team} in {season}."}
-        
+    try:
+        # 1. Grab all player columns
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute("""
-                SELECT MAX(war) as max_war FROM player_stats 
-                WHERE primary_position = %s AND team ILIKE %s;
-            """, (position.strip().upper(), f"%{target_team}%"))
-            highest_war = float(cursor.fetchone()['max_war'] or 0.0)
+            query = """
+                SELECT * 
+                FROM player_stats 
+                WHERE LOWER(name_ascii) = LOWER(%s) 
+                AND season = %s 
+                AND primary_position = %s;
+            """
+            cursor.execute(query, (name.strip(), int(season), position.strip().upper()))
+            player = cursor.fetchone()
 
-        player_war = float(player['war'] or 0.0)
-        is_highest = round(player_war, 2) >= round(highest_war, 2)
-        percent_of_max = int(round((player_war / highest_war) * 100)) if highest_war > 0 else 100
+        if not player:
+            return {
+                "valid": False, 
+                "message": f"No record of {name} playing {position.upper()} in {season}."
+            }
 
-        return {
-            "valid": True,
-            "war": round(player_war, 2),
-            "mlbam_id": player.get('mlbam_id'),
-            "is_highest_war": is_highest,
-            "percent_of_max": percent_of_max,
-            "message": f"Correct! {player['name_ascii']} played for {target_team} in {season}."
-        }
+        # Team category validation
+        if category == "Team":
+            player_teams = player['team'].split('/') if player['team'] else []
+            target_team = str(subcategory).strip().upper()
 
-    # --- 3. Category: Statistics ---
-    else:
-        # Map the DB column and enforce the correct data type for clean text formatting
-        stat_map = {
-            "HR": {"col": "hr", "type": int},
-            "RBI": {"col": "rbi", "type": int},
-            "H": {"col": "h", "type": int},
-            "SB": {"col": "sb", "type": int},
-            "R": {"col": "r", "type": int},
-            "2B": {"col": "2b", "type": int},
-            "W": {"col": "w", "type": int},
-            "SV": {"col": "sv", "type": int},
-            "SO_P": {"col": "so.1", "type": int},
-            "wRC+": {"col": "wRC+", "type": int}, 
-            "WAR": {"col": "war", "type": float},
-            "IP": {"col": "ip", "type": float}
-        }
-        
-        stat_config = stat_map.get(category)
-        
-        if not stat_config:
-            return {"valid": False, "message": f"Unknown category: {category}"}
+            if target_team not in player_teams and target_team != player['team']:
+                return {"valid": False, "message": f"{player['name_ascii']} did not play for {target_team} in {season}."}
+            
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute("""
+                    SELECT MAX(war) as max_war FROM player_stats 
+                    WHERE primary_position = %s AND team ILIKE %s;
+                """, (position.strip().upper(), f"%{target_team}%"))
+                highest_war = float(cursor.fetchone()['max_war'] or 0.0)
 
-        db_column = stat_config["col"]
-        cast_type = stat_config["type"]
+            player_war = float(player['war'] or 0.0)
+            is_highest = round(player_war, 2) >= round(highest_war, 2)
+            percent_of_max = int(round((player_war / highest_war) * 100)) if highest_war > 0 else 100
 
-        # Parse the required stat according to its type
-        required_stat = cast_type(subcategory)
-        
-        # Safely convert the player's stat (casting to float first handles edge cases 
-        # where the DB passes '150.0' strings to an int conversion)
-        raw_val = player[db_column] or 0
-        if cast_type == float:
-            player_stat = round(float(raw_val), 1) if category != "WAR" else round(float(raw_val), 2)
+            return {
+                "valid": True,
+                "war": round(player_war, 2),
+                "mlbam_id": player.get('mlbam_id'),
+                "is_highest_war": is_highest,
+                "percent_of_max": percent_of_max,
+                "message": f"Correct! {player['name_ascii']} played for {target_team} in {season}."
+            }
+
+        # Statistical categories (HR, RBI, H, SB, R, 2B, W, SV, SO_P, wRC+, WAR, IP)
         else:
-            player_stat = int(float(raw_val))
+            # Map the DB column and enforce the correct data type for clean text formatting
+            stat_map = {
+                "HR": {"col": "hr", "type": int},
+                "RBI": {"col": "rbi", "type": int},
+                "H": {"col": "h", "type": int},
+                "SB": {"col": "sb", "type": int},
+                "R": {"col": "r", "type": int},
+                "2B": {"col": "2b", "type": int},
+                "W": {"col": "w", "type": int},
+                "SV": {"col": "sv", "type": int},
+                "SO_P": {"col": "so.1", "type": int},
+                "wRC+": {"col": "wRC+", "type": int}, 
+                "WAR": {"col": "war", "type": float},
+                "IP": {"col": "ip", "type": float}
+            }
+            
+            stat_config = stat_map.get(category)
+            
+            if not stat_config:
+                return {"valid": False, "message": f"Unknown category: {category}"}
 
-        if player_stat < required_stat:
-            return {"valid": False, "message": f"{player['name_ascii']} only had {player_stat} {category} in {season} (needed {required_stat}+)."}
-        
-        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute(f"""
-                SELECT MAX(war) as max_war FROM player_stats 
-                WHERE primary_position = %s AND "{db_column}" >= %s;
-            """, (position.strip().upper(), required_stat))
-            highest_war = float(cursor.fetchone()['max_war'] or 0.0)
+            db_column = stat_config["col"]
+            cast_type = stat_config["type"]
 
-        player_war = float(player['war'] or 0.0)
-        is_highest = round(player_war, 2) >= round(highest_war, 2)
-        percent_of_max = int(round((player_war / highest_war) * 100)) if highest_war > 0 else 100
+            # Parse the required stat according to its type
+            required_stat = cast_type(subcategory)
+            
+            # Safely convert the player's stat (casting to float first handles edge cases 
+            # where the DB passes '150.0' strings to an int conversion)
+            raw_val = player[db_column] or 0
+            if cast_type == float:
+                player_stat = round(float(raw_val), 1) if category != "WAR" else round(float(raw_val), 2)
+            else:
+                player_stat = int(float(raw_val))
 
-        return {
-            "valid": True,
-            "war": round(player_war, 2),
-            "mlbam_id": player.get('mlbam_id'),
-            "is_highest_war": is_highest,
-            "percent_of_max": percent_of_max,
-            "message": f"Correct! {player['name_ascii']} had {player_stat} {category} in {season}."
-        }
+            if player_stat < required_stat:
+                return {"valid": False, "message": f"{player['name_ascii']} only had {player_stat} {category} in {season} (needed {required_stat}+)."}
+            
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(f"""
+                    SELECT MAX(war) as max_war FROM player_stats 
+                    WHERE primary_position = %s AND "{db_column}" >= %s;
+                """, (position.strip().upper(), required_stat))
+                highest_war = float(cursor.fetchone()['max_war'] or 0.0)
+
+            player_war = float(player['war'] or 0.0)
+            is_highest = round(player_war, 2) >= round(highest_war, 2)
+            percent_of_max = int(round((player_war / highest_war) * 100)) if highest_war > 0 else 100
+
+            return {
+                "valid": True,
+                "war": round(player_war, 2),
+                "mlbam_id": player.get('mlbam_id'),
+                "is_highest_war": is_highest,
+                "percent_of_max": percent_of_max,
+                "message": f"Correct! {player['name_ascii']} had {player_stat} {category} in {season}."
+            }
+    except Exception as e:
+        conn.rollback()
+        return {"valid": False, "message": f"Error during validation: {e}"}
+
+    finally:
+        release_db_connection(conn)
 
 app = Flask(__name__)
 CORS(app) # Allows your frontend to talk to this backend
@@ -159,7 +177,9 @@ def validate():
 def get_optimal_lineup():
     game_config = request.json
     optimal_lineup = {}
-    
+    total_optimal_war = 0.0 # Add a counter for the total WAR
+
+    conn = get_db_connection()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
             for pos, req in game_config.items():
@@ -167,7 +187,6 @@ def get_optimal_lineup():
                 sub = req['sub']
                 
                 if cat == "Team":
-                    # Using NULLS LAST prevents empty WAR rows from accidentally floating to the top
                     cursor.execute("""
                         SELECT name_ascii, war, season FROM player_stats 
                         WHERE primary_position = %s AND team ILIKE %s
@@ -177,7 +196,6 @@ def get_optimal_lineup():
                     stat_map = {"HR": "hr", "RBI": "rbi", "H": "h", "SB": "sb", "R": "r", "2B": "2b", "W": "w", "SV": "sv", "SO_P": "so.1", "wRC+": "wRC+", "WAR": "war", "IP": "ip"}
                     db_column = stat_map.get(cat)
                     
-                    # Safely cast the column to TEXT, convert empty strings to NULL, and then cast to FLOAT
                     cursor.execute(f"""
                         SELECT name_ascii, war, season FROM player_stats 
                         WHERE primary_position = %s 
@@ -187,30 +205,33 @@ def get_optimal_lineup():
                 
                 best = cursor.fetchone()
                 if best:
-                    # Format WAR neatly to 2 decimal places
                     safe_war = round(float(best['war'] or 0.0), 2)
+                    total_optimal_war += safe_war # Add to our running total
                     optimal_lineup[pos] = f"{best['name_ascii']} ('{str(best['season'])[2:]}) - {safe_war} WAR"
                 else:
                     optimal_lineup[pos] = "No player found"
                     
-        # Commit the transaction so the connection stays clean
+        # Add the total to our dictionary before sending it to the frontend
+        optimal_lineup['total_war'] = round(total_optimal_war, 2)
+        
         conn.commit()
         return jsonify(optimal_lineup)
         
     except Exception as e:
-        # If it fails again, roll back the connection to prevent a lockup and print the exact error to your terminal
         conn.rollback()
         print(f"Optimal Lineup Error: {e}")
         return jsonify({"error": str(e)}), 500
 
+    finally:
+        release_db_connection(conn)
+
 @app.route('/api/autocomplete', methods=['GET'])
 def autocomplete():
     query = request.args.get('q', '')
-    
-    # Only search if they've typed at least 2 characters to save database load
     if len(query) < 2:
         return jsonify({"players": []})
         
+    conn = get_db_connection()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
             # SELECT DISTINCT ensures we don't get 20 rows of "Albert Pujols" for his 20 seasons
@@ -230,6 +251,9 @@ def autocomplete():
     except Exception as e:
         conn.rollback()
         return jsonify({"error": str(e)}), 500
+
+    finally:
+        release_db_connection(conn)
 
 if __name__ == '__main__':
     # Starts the local server on port 5000

@@ -137,7 +137,6 @@
             z-index: 20;
         }
         
-        /* If they hit 100%, let's make the badge gold! */
         .percent-badge.gold {
             background-color: #ffd700;
             color: #000;
@@ -154,10 +153,10 @@
         #P  { bottom: 200px; left: 50%; } /* Exactly on the Mound */
         
         /* The Infield (Shifted off the bags into true fielding depths) */
-        #first-base { bottom: 200px; left: 74%; } /* Plays deep and off the line */
-        #second-base { bottom: 350px; left: 59%; } /* Deep in the hole on the right side */
-        #SS { bottom: 350px; left: 41%; } /* Deep in the hole on the left side */
-        #third-base { bottom: 200px; left: 24%; } /* Plays deep and off the line */
+        #first-base { bottom: 200px; left: 74%; } 
+        #second-base { bottom: 350px; left: 59%; } 
+        #SS { bottom: 350px; left: 41%; } 
+        #third-base { bottom: 200px; left: 24%; } 
         
         /* The Outfield */
         #LF { top: 15%; left: 20%; }
@@ -206,7 +205,6 @@
         .success { color: #28a745; }
         .error { color: #dc3545; }
 
-        /* --- UI Switch Styling --- */
         .switch {
             position: relative;
             display: inline-block;
@@ -215,14 +213,12 @@
             flex-shrink: 0;
         }
 
-        /* Hide the default HTML checkbox */
         .switch input {
             opacity: 0;
             width: 0;
             height: 0;
         }
 
-        /* The slider track */
         .slider {
             position: absolute;
             cursor: pointer;
@@ -235,7 +231,6 @@
             border-radius: 24px;
         }
 
-        /* The sliding circle */
         .slider:before {
             position: absolute;
             content: "";
@@ -355,7 +350,6 @@
         <div class="dirt"></div>
         <div class="base-paths"></div>
         <div class="mound"></div>
-        <!-- Positions injected by JS -->
     </div>
 
     <!-- The Input Panel -->
@@ -379,7 +373,6 @@
             <label for="playerName">Player Name</label>
             <div class="autocomplete-wrapper">
                 <input type="text" id="playerName" placeholder="e.g., Albert Pujols" disabled autocomplete="off">
-                <!-- THIS is the line your JavaScript is looking for: -->
                 <ul id="autocomplete-list" class="autocomplete-items"></ul>
             </div>
         </div>
@@ -439,21 +432,21 @@
             return pool[randomIndex];
         }
 
-        // 1. Define the Daily Game Logic (Categories)
+        // Define the Daily Game Logic (Categories)
         const gameConfig = {};
 
         let totalWar = 0.0;
         let activePosition = null;
         let completedSquares = 0;
         const gridResults = {}; // Stores the status of each square for the share sheet
-        // Wrap initialization in an async function to load the JSON
+        
         async function initializeGame() {
             try {
-                // 1. Fetch the external JSON file
+                // Fetch the external JSON file
                 const response = await fetch('categories.json');
                 const data = await response.json();
                 
-                // 2. Build the game config dynamically
+                // Build the game config dynamically
                 const positions = ["C", "1B", "2B", "3B", "SS", "LF", "CF", "RF", "P"];
                 positions.forEach(pos => {
                     if (pos === "P") {
@@ -463,7 +456,7 @@
                     }
                 });
 
-                // 3. Initialize the Diamond UI now that config is ready
+                // Initialize the Diamond UI now that config is ready
                 const fieldContainer = document.querySelector('.field-container');
                 
                 Object.keys(gameConfig).forEach(pos => {
@@ -551,7 +544,22 @@
             }
         });
 
-        // 4. Handle Clicking a Square
+        // --- Enter Key Submit Logic ---
+        function handleEnterKey(event) {
+            if (event.key === "Enter") {
+                event.preventDefault(); 
+                // Only submit if the button is actually enabled
+                if (!document.getElementById('submitBtn').disabled) {
+                    submitGuess();
+                }
+            }
+        }
+
+        // Attach the listener to both input fields
+        document.getElementById('playerName').addEventListener('keypress', handleEnterKey);
+        document.getElementById('seasonYear').addEventListener('keypress', handleEnterKey);
+
+        // Handle Clicking a Square
         function selectPosition(pos) {
             document.querySelectorAll('.position-node').forEach(el => el.classList.remove('active'));
             
@@ -582,7 +590,7 @@
             document.getElementById('playerName').focus();
         }
 
-        // 4. Send the Data to Python Flask API
+        // Send the Data to Python Flask API
         async function submitGuess() {
             if (!activePosition) return;
 
@@ -642,7 +650,7 @@
                     square.classList.remove('active');
                     
                     
-                    // --- NEW HEADSHOT LOGIC ---
+                    // --- HEADSHOT LOGIC ---
                     let imageHtml = '';
                     if (data.mlbam_id) {
                         // Construct the MLB.com image URL
@@ -747,7 +755,7 @@
                 
 
             } catch (error) {
-                messageBoard.innerHTML = `<span class="error">Server Error: Make sure your Python Flask backend is running on port 5000.</span>`;
+                messageBoard.innerHTML = `<span class="error">Server Error</span>`;
                 console.error(error);
                 submitBtn.disabled = false;
             }
@@ -843,9 +851,29 @@
             });
         }
 
-        // Fetch the optimal lineup from the Python backend
+        // Variable to remember if we already fetched the data so we don't spam the database
+        let optimalDataFetched = false;
+
+        // Fetch and toggle the optimal lineup
         async function showOptimal() {
             const btn = document.querySelector('.btn-optimal');
+            const listDiv = document.getElementById('optimal-list');
+
+            // If the list is currently visible, hide it and change the button text back
+            if (listDiv.style.display === 'block') {
+                listDiv.style.display = 'none';
+                btn.innerText = "See Best Possible Lineup";
+                return; // Stop the function here
+            }
+
+            // If it's hidden but we've already fetched the data, just show it
+            if (optimalDataFetched) {
+                listDiv.style.display = 'block';
+                btn.innerText = "Hide Best Possible Lineup";
+                return; // Stop the function here
+            }
+
+            // If we haven't fetched the data yet, go get it from the API
             btn.disabled = true;
             btn.innerText = "Loading...";
 
@@ -858,20 +886,27 @@
                 
                 const optimalData = await response.json();
                 
-                let listHtml = "<strong>Maximum Possible WAR:</strong><br><br>";
+                let listHtml = `<strong style="color: #007bff; font-size: 1.1em;">Maximum Possible WAR: ${optimalData.total_war.toFixed(2)}</strong><br><br>`;
                 const order = ["C", "1B", "2B", "3B", "SS", "LF", "CF", "RF", "P"];
                 
                 order.forEach(pos => {
                     listHtml += `<strong>${pos}:</strong> ${optimalData[pos]}<br>`;
                 });
                 
-                document.getElementById('optimal-list').innerHTML = listHtml;
-                document.getElementById('optimal-list').style.display = 'block';
-                btn.style.display = 'none'; // Hide the button once loaded
+                listDiv.innerHTML = listHtml;
+                listDiv.style.display = 'block';
+                
+                // Mark as fetched so we don't ping the server again, update the button, and re-enable it
+                optimalDataFetched = true;
+                btn.innerText = "Hide Best Possible Lineup";
+                btn.disabled = false;
                 
             } catch (error) {
                 btn.innerText = "Error loading optimal lineup";
-                btn.disabled = false;
+                setTimeout(() => {
+                    btn.innerText = "See Best Possible Lineup";
+                    btn.disabled = false;
+                }, 2000);
             }
         }
     </script>
