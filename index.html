@@ -306,6 +306,17 @@
             cursor: not-allowed;
         }
 
+        .btn-view-results {
+            background-color: #17a2b8; /* A nice teal color */
+            color: white;
+            border: none;
+            margin-top: 10px;
+            display: none; /* Hidden by default */
+        }
+        .btn-view-results:hover {
+            background-color: #138496;
+        }
+
         /* --- Autocomplete Dropdown Styling --- */
         .autocomplete-wrapper {
             position: relative;
@@ -383,6 +394,7 @@
         <button id="submitBtn" onclick="submitGuess()" disabled>Submit Guess</button>
 
         <button id="giveUpBtn" class="btn-give-up" onclick="giveUpGame()">Give Up</button>
+        <button id="viewResultsBtn" class="btn-view-results" onclick="openResults()">View Results</button>
         <div id="message-board"></div>
     </div>
 
@@ -767,6 +779,9 @@
         function checkGameComplete() {
             completedSquares++;
             if (completedSquares === 9) {
+                document.getElementById('giveUpBtn').style.display = 'none';
+                document.getElementById('viewResultsBtn').style.display = 'block';
+
                 setTimeout(() => {
                     document.getElementById('final-score').innerText = totalWar.toFixed(2);
                     document.getElementById('summaryModal').style.display = 'flex';
@@ -822,6 +837,10 @@
             document.getElementById('submitBtn').disabled = true;
             document.getElementById('giveUpBtn').disabled = true;
 
+            // Swap the buttons
+            document.getElementById('giveUpBtn').style.display = 'none';
+            document.getElementById('viewResultsBtn').style.display = 'block';
+            
             // Trigger the end-game modal immediately
             if (completedSquares === 9) {
                 setTimeout(() => {
@@ -908,6 +927,9 @@
                     btn.disabled = false;
                 }, 2000);
             }
+        }
+        function openResults() {
+            document.getElementById('summaryModal').style.display = 'flex';
         }
     </script>
 </body>
