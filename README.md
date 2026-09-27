@@ -8,6 +8,16 @@
 
 The ultimate goal is to identify the player/season combinations that yield the highest **Wins Above Replacement (WAR)** for each square.
 
+## Screenshots
+
+### Gameplay
+![Gameplay](/images/Gameplay.png)
+
+### Hard Mode
+![Hard Mode](/images/HardMode.png)
+
+### Game Complete Summary
+![Game Complete Summary](/images/GameComplete.png)
 ### Key Features
 
 * **Daily Categories:** Just like Wordle, the categories change every day for all players using a daily seeded random generator.
