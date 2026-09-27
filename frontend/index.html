@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diamond in the Rough</title>
+    <style>
+        :root {
+            --grass-color: #2d8a4e;
+            --dirt-color: #c4996c;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f4f4f9;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding: 40px;
+            gap: 50px;
+            margin: 0;
+        }
+
+        /* The Baseball Diamond UI */
+        .field-container {
+            width: 700px;
+            height: 700px;
+            background-color: var(--grass-color);
+            position: relative;
+            border-radius: 5px;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+            border: 4px solid #1a5c31;
+            overflow: hidden;
+        }
+        
+        /* Infield Dirt Cutout - Shifted UP to expand the bottom/foul territory */
+        .dirt {
+            position: absolute;
+            bottom: 20px; 
+            left: 50%;
+            transform: translateX(-50%) rotate(45deg);
+            width: 480px;
+            height: 480px;
+            background-color: var(--dirt-color);
+            border-radius: 20px;
+            border: 2px solid #b3855a;
+        }
+
+        /* Base Paths (Visual Aid) */
+        .base-paths {
+            position: absolute;
+            bottom: 120px; /* Moved up to match the dirt shift */
+            left: 50%;
+            transform: translateX(-50%) rotate(45deg);
+            width: 280px;
+            height: 280px;
+            border: 3px solid rgba(255, 255, 255, 0.4);
+            pointer-events: none;
+        }
+
+        /* Pitcher's Mound */
+        .mound {
+            position: absolute;
+            bottom: 300px; 
+            left: 50%;
+            transform: translateX(-50%);
+            width: 60px;
+            height: 40px;
+            background-color: #b3855a;
+            border-radius: 50%;
+            pointer-events: none;
+        }
+
+        .position-node {
+            position: absolute;
+            width: 100px; 
+            height: 100px;
+            background-color: white;
+            border: 2px solid #333;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 0.95em;
+            transform: translate(-50%, -50%); 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.15);
+            transition: transform 0.2s, border-color 0.2s;
+            text-align: center;
+            padding: 4px;
+            z-index: 10;
+        }
+
+        .position-node:hover {
+            transform: translate(-50%, -50%) scale(1.1);
+            border-color: #007bff;
+        }
+
+        .position-node.active {
+            border: 3px solid #007bff;
+            background-color: #e6f2ff;
+        }
+
+        .position-node.locked {
+            background-color: #d4edda;
+            border-color: #28a745;
+            cursor: default;
+            pointer-events: none;
+        }
+
+        .position-node.optimal {
+            background-color: #add8e6; /* Light Blue */
+            border-color: #0056b3;
+            cursor: default;
+            pointer-events: none;
+        }
+
+        .position-node.failed {
+            background-color: #f8d7da;
+            border-color: #dc3545;
+            cursor: default;
+            pointer-events: none;
+            opacity: 0.85;
+        }
+
+        .percent-badge {
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            background-color: #333;
+            color: #fff;
+            font-size: 0.65em;
+            font-weight: bold;
+            padding: 2px 4px;
+            border-radius: 4px;
+            z-index: 20;
+        }
+        
+        /* If they hit 100%, let's make the badge gold! */
+        .percent-badge.gold {
+            background-color: #ffd700;
+            color: #000;
+        }
+
+        .pos-title { font-size: 1.2em; color: #333; margin-bottom: 2px; }
+        .pos-desc { font-size: 0.75em; color: #666; }
+        .pos-result { font-size: 0.8em; color: #28a745; margin-top: 4px; display: none; }
+
+        /* Actual Defensive Positioning */
+        
+        /* The Battery */
+        #C  { bottom: 0px; left: 50%; } /* Exactly on Home Plate */
+        #P  { bottom: 200px; left: 50%; } /* Exactly on the Mound */
+        
+        /* The Infield (Shifted off the bags into true fielding depths) */
+        #first-base { bottom: 200px; left: 74%; } /* Plays deep and off the line */
+        #second-base { bottom: 350px; left: 59%; } /* Deep in the hole on the right side */
+        #SS { bottom: 350px; left: 41%; } /* Deep in the hole on the left side */
+        #third-base { bottom: 200px; left: 24%; } /* Plays deep and off the line */
+        
+        /* The Outfield */
+        #LF { top: 15%; left: 20%; }
+        #CF { top: 8%; left: 50%; }
+        #RF { top: 15%; left: 80%; }
+
+        /* The Control Panel */
+        .control-panel {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            width: 320px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            position: sticky;
+            top: 40px;
+        }
+
+        h2 { margin-top: 0; color: #333; }
+        .scoreboard {
+            font-size: 1.4em;
+            font-weight: bold;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #eee;
+        }
+        
+        .input-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 0.9em; }
+        input { width: 100%; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; font-size: 1em; }
+        
+        button {
+            width: 100%;
+            padding: 12px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 1em;
+            cursor: pointer;
+        }
+        button:hover { background-color: #0056b3; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+
+        #message-board { margin-top: 20px; font-size: 0.95em; font-weight: bold; min-height: 50px; line-height: 1.4; }
+        .success { color: #28a745; }
+        .error { color: #dc3545; }
+
+        /* --- UI Switch Styling --- */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 46px;
+            height: 24px;
+            flex-shrink: 0;
+        }
+
+        /* Hide the default HTML checkbox */
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        /* The slider track */
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .3s;
+            border-radius: 24px;
+        }
+
+        /* The sliding circle */
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .3s;
+            border-radius: 50%;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        /* When checked, change background to red (Hard Mode) and move circle */
+        input:checked + .slider {
+            background-color: #dc3545; 
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(22px);
+        }
+
+        /* --- Modal Styling --- */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6);
+            z-index: 100;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            width: 350px;
+            text-align: center;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+        }
+        .modal-content h2 { margin-top: 0; color: #333; }
+        .score-display { font-size: 2em; font-weight: bold; color: #007bff; margin: 15px 0; }
+        
+        .modal-btn {
+            width: 100%; padding: 10px; margin-bottom: 10px;
+            border: none; border-radius: 4px; font-weight: bold; cursor: pointer;
+        }
+        .btn-share { background-color: #28a745; color: white; }
+        .btn-share:hover { background-color: #218838; }
+        .btn-optimal { background-color: #ffc107; color: #333; }
+        .btn-optimal:hover { background-color: #e0a800; }
+        .btn-close { background-color: #ccc; color: #333; }
+        
+        #optimal-list {
+            margin-top: 15px; text-align: left; font-size: 0.85em; 
+            background: #f8f9fa; padding: 10px; border-radius: 4px; display: none;
+        }
+
+        .btn-give-up {
+            background-color: #f8f9fa;
+            color: #dc3545;
+            border: 2px solid #dc3545;
+            margin-top: 10px;
+        }
+        .btn-give-up:hover {
+            background-color: #dc3545;
+            color: white;
+        }
+        .btn-give-up:disabled {
+            background-color: #e9ecef;
+            color: #adb5bd;
+            border-color: #dee2e6;
+            cursor: not-allowed;
+        }
+
+        /* --- Autocomplete Dropdown Styling --- */
+        .autocomplete-wrapper {
+            position: relative;
+        }
+        
+        .autocomplete-items {
+            position: absolute;
+            border: 1px solid #ccc;
+            border-top: none;
+            z-index: 99;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background-color: #fff;
+            margin: 0;
+            padding: 0;
+            list-style: none;
+            max-height: 150px;
+            overflow-y: auto;
+            border-radius: 0 0 4px 4px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            display: none; /* Hidden by default */
+        }
+        
+        .autocomplete-items li {
+            padding: 10px;
+            cursor: pointer;
+            border-bottom: 1px solid #eee;
+            font-size: 0.9em;
+        }
+        
+        .autocomplete-items li:hover {
+            background-color: #007bff;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- The Diamond Grid -->
+    <div class="field-container">
+        <div class="dirt"></div>
+        <div class="base-paths"></div>
+        <div class="mound"></div>
+        <!-- Positions injected by JS -->
+    </div>
+
+    <!-- The Input Panel -->
+    <div class="control-panel">
+        <div class="scoreboard">Total WAR: <span id="total-war">0.00</span></div>
+
+        <div style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; background: #fff3cd; padding: 10px; border-radius: 4px; border: 1px solid #ffe69c;">
+            <label for="hardModeToggle" style="margin-bottom: 0; cursor: pointer; color: #664d03;">Hard Mode (1 guess/sq)</label>
+            <label class="switch">
+                <input type="checkbox" id="hardModeToggle">
+                <span class="slider"></span>
+            </label>        
+        </div>
+        
+        <h3 id="active-pos-display">Select a position</h3>
+        <p id="active-category-display" style="color: #666; font-size: 0.9em; margin-bottom: 20px;">
+            Click a square on the field to start guessing.
+        </p>
+
+        <div class="input-group">
+            <label for="playerName">Player Name</label>
+            <div class="autocomplete-wrapper">
+                <input type="text" id="playerName" placeholder="e.g., Albert Pujols" disabled autocomplete="off">
+                <ul id="autocomplete-list" class="autocomplete-items"></ul>
+            </div>
+        </div>
+        <div class="input-group">
+            <label for="seasonYear">Season</label>
+            <input type="number" id="seasonYear" placeholder="e.g., 2003" disabled>
+        </div>
+        <button id="submitBtn" onclick="submitGuess()" disabled>Submit Guess</button>
+
+        <button id="giveUpBtn" class="btn-give-up" onclick="giveUpGame()">Give Up</button>
+        <div id="message-board"></div>
+    </div>
+
+    <!-- Summary Modal -->
+    <div class="modal-overlay" id="summaryModal">
+        <div class="modal-content">
+            <h2>Game Complete!</h2>
+            <p>Your Total WAR:</p>
+            <div class="score-display" id="final-score">0.00</div>
+            
+            <button class="modal-btn btn-share" onclick="shareScore()">Share Score</button>
+            <button class="modal-btn btn-optimal" onclick="showOptimal()">See Best Possible Lineup</button>
+            <button class="modal-btn btn-close" onclick="document.getElementById('summaryModal').style.display='none'">Close</button>
+            
+            <div id="optimal-list"></div>
+        </div>
+    </div>
+
+    <script>
+
+        // Seeded Random Generator setup
+        function mulberry32(a) {
+            return function() {
+              var t = a += 0x6D2B79F5;
+              t = Math.imul(t ^ t >>> 15, t | 1);
+              t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+              return ((t ^ t >>> 14) >>> 0) / 4294967296;
+            }
+        }
+
+        // Get today's date as a string (YYYY-MM-DD) based on local time
+        const today = new Date();
+        const dateString = `${today.getFullYear()}-${today.getMonth() + 1}-${today.getDate()}`;
+        
+        // Convert the date string into a numerical seed (simple hash)
+        let seed = 0;
+        for (let i = 0; i < dateString.length; i++) {
+            seed = Math.imul(31, seed) + dateString.charCodeAt(i) | 0;
+        }
+
+        // Create our daily random function
+        const dailyRandom = mulberry32(seed);
+
+        // Update the helper to use the daily seed instead of Math.random()
+        function getDailyCategory(pool) {
+            const randomIndex = Math.floor(dailyRandom() * pool.length);
+            return pool[randomIndex];
+        }
+
+        // 1. Define the Daily Game Logic (Categories)
+        const gameConfig = {};
+
+        let totalWar = 0.0;
+        let activePosition = null;
+        let completedSquares = 0;
+        const gridResults = {}; // Stores the status of each square for the share sheet
+        // Wrap initialization in an async function to load the JSON
+        async function initializeGame() {
+            try {
+                // 1. Fetch the external JSON file
+                const response = await fetch('categories.json');
+                const data = await response.json();
+                
+                // 2. Build the game config dynamically
+                const positions = ["C", "1B", "2B", "3B", "SS", "LF", "CF", "RF", "P"];
+                positions.forEach(pos => {
+                    if (pos === "P") {
+                        gameConfig[pos] = getDailyCategory(data.pitcherCategories);
+                    } else {
+                        gameConfig[pos] = getDailyCategory(data.hitterCategories);
+                    }
+                });
+
+                // 3. Initialize the Diamond UI now that config is ready
+                const fieldContainer = document.querySelector('.field-container');
+                
+                Object.keys(gameConfig).forEach(pos => {
+                    const node = document.createElement('div');
+                    node.className = 'position-node';
+                    
+                    const positionIds = {
+                        "1B": "first-base",
+                        "2B": "second-base",
+                        "3B": "third-base"
+                    };
+
+                    node.id = positionIds[pos] || pos;
+                    node.onclick = () => selectPosition(pos);
+                    
+                    node.innerHTML = `
+                        <div class="pos-title">${pos}</div>
+                        <div class="pos-desc">${gameConfig[pos].desc}</div>
+                        <div class="pos-result" id="result-${pos}"></div>
+                    `;
+                    fieldContainer.appendChild(node);
+                });
+
+            } catch (error) {
+                console.error("Failed to load categories.json:", error);
+                document.getElementById('active-category-display').innerText = "Error loading game data.";
+            }
+        }
+
+        // Start the game setup when the page loads
+        initializeGame();
+
+        // --- Autocomplete Logic ---
+        const playerNameInput = document.getElementById('playerName');
+        const autocompleteList = document.getElementById('autocomplete-list');
+
+        playerNameInput.addEventListener('input', async function() {
+            const val = this.value;
+            
+            // Clear the list if the input is empty or less than 2 characters
+            if (!val || val.length < 2) {
+                autocompleteList.innerHTML = '';
+                autocompleteList.style.display = 'none';
+                return;
+            }
+
+            try {
+                const response = await fetch(`http://127.0.0.1:5000/api/autocomplete?q=${encodeURIComponent(val)}`);
+                const data = await response.json();
+                
+                autocompleteList.innerHTML = ''; // Clear old results
+                
+                if (data.players && data.players.length > 0) {
+                    autocompleteList.style.display = 'block';
+                    
+                    data.players.forEach(player => {
+                        const li = document.createElement('li');
+                        li.innerText = player;
+                        
+                        // When a user clicks a name in the list, fill the input and close the list
+                        li.addEventListener('click', function() {
+                            playerNameInput.value = player;
+                            autocompleteList.innerHTML = '';
+                            autocompleteList.style.display = 'none';
+                            
+                            // Automatically move the user's cursor to the "Season" input
+                            document.getElementById('seasonYear').focus();
+                        });
+                        
+                        autocompleteList.appendChild(li);
+                    });
+                } else {
+                    autocompleteList.style.display = 'none';
+                }
+            } catch (error) {
+                console.error("Autocomplete fetch error:", error);
+            }
+        });
+
+        // Close the dropdown if the user clicks anywhere else on the screen
+        document.addEventListener('click', function(e) {
+            if (e.target !== playerNameInput) {
+                autocompleteList.innerHTML = '';
+                autocompleteList.style.display = 'none';
+            }
+        });
+
+        // 4. Handle Clicking a Square
+        function selectPosition(pos) {
+            document.querySelectorAll('.position-node').forEach(el => el.classList.remove('active'));
+            
+            const positionIds = {
+                "1B": "first-base",
+                "2B": "second-base",
+                "3B": "third-base"
+            };
+            
+            const targetId = positionIds[pos] || pos;
+            const node = document.getElementById(targetId);
+            
+            if(node.classList.contains('locked')) return; 
+            
+            node.classList.add('active');
+            activePosition = pos;
+
+            document.getElementById('active-pos-display').innerText = `Guessing: ${pos}`;
+            document.getElementById('active-category-display').innerText = `Requirement: ${gameConfig[pos].desc}`;
+            
+            document.getElementById('playerName').disabled = false;
+            document.getElementById('seasonYear').disabled = false;
+            document.getElementById('submitBtn').disabled = false;
+            
+            document.getElementById('message-board').innerHTML = '';
+            document.getElementById('playerName').value = '';
+            document.getElementById('seasonYear').value = '';
+            document.getElementById('playerName').focus();
+        }
+
+        // 4. Send the Data to Python Flask API
+        async function submitGuess() {
+            if (!activePosition) return;
+
+            const name = document.getElementById('playerName').value;
+            const season = document.getElementById('seasonYear').value;
+            const messageBoard = document.getElementById('message-board');
+            const submitBtn = document.getElementById('submitBtn');
+
+            if (!name || !season) {
+                messageBoard.innerHTML = `<span class="error">Please enter a name and season.</span>`;
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.innerText = "Checking...";
+
+            const payload = {
+                name: name,
+                season: season,
+                position: activePosition,
+                category: gameConfig[activePosition].cat,
+                subcategory: gameConfig[activePosition].sub
+            };
+
+            try {
+                const response = await fetch('http://127.0.0.1:5000/api/validate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json();
+
+                if (data.valid) {
+                    messageBoard.innerHTML = `<span class="success">${data.message} <br>(+${data.war} WAR)</span>`;
+                    
+                    totalWar += data.war;
+                    document.getElementById('total-war').innerText = totalWar.toFixed(2);
+                    
+                    const positionIds = {
+                        "1B": "first-base",
+                        "2B": "second-base",
+                        "3B": "third-base"
+                    };
+                    const targetId = positionIds[activePosition] || activePosition;
+                    const square = document.getElementById(targetId);
+                    
+                    // Check if it's the highest WAR and apply the correct class
+                    if (data.is_highest_war) {
+                        square.classList.add('optimal');
+                        messageBoard.innerHTML = `<span class="success" style="color: #0056b3;">${data.message} <br>MAX WAR FOR THIS SQUARE! (+${data.war})</span>`;
+                    } else {
+                        square.classList.add('locked');
+                        messageBoard.innerHTML = `<span class="success">${data.message} <br>(+${data.war} WAR)</span>`;
+                    }
+                    
+                    square.classList.remove('active');
+                    
+                    
+                    // --- NEW HEADSHOT LOGIC ---
+                    let imageHtml = '';
+                    if (data.mlbam_id) {
+                        // Construct the MLB.com image URL
+                        const imgUrl = `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:silo:current.png/v1/people/${data.mlbam_id}/headshot/67/current`;
+                        
+                        // Create an img tag styled to fit the square
+                        imageHtml = `<img src="${imgUrl}" alt="${name}" style="width: 50px; height: auto; border-radius: 4px; margin-bottom: 2px;">`;
+                    }
+                    
+                    
+                    const resultDiv = document.getElementById(`result-${activePosition}`);
+                    if (!resultDiv) {
+                        const newResultDiv = document.createElement('div');
+                        newResultDiv.className = 'pos-result';
+                        newResultDiv.id = `result-${activePosition}`;
+                        square.appendChild(newResultDiv);
+                    }
+                    
+                    // Determine the badge class (gold if 100%)
+                    const badgeClass = data.percent_of_max === 100 ? 'percent-badge gold' : 'percent-badge';
+                    
+                    // Create the badge HTML
+                    const badgeHtml = `<div class="${badgeClass}">${data.percent_of_max}%</div>`;
+                    
+                    document.getElementById(`result-${activePosition}`).style.display = 'flex';
+                    document.getElementById(`result-${activePosition}`).style.flexDirection = 'column';
+                    document.getElementById(`result-${activePosition}`).style.alignItems = 'center';
+                    
+                    // Inject the badge, the image, and the text
+                    document.getElementById(`result-${activePosition}`).innerHTML = `
+                        ${badgeHtml}
+                        ${imageHtml}
+                        <strong style="font-size: 0.8em; line-height: 1;">${name}</strong>
+                        <span style="font-size: 0.7em; color: #555;">'${season.substring(2)} - ${data.war} WAR</span>
+                    `;
+                    
+                    // Hide the position title and description to make room for the photo
+                    square.querySelector('.pos-title').style.display = 'none';
+                    square.querySelector('.pos-desc').style.display = 'none';
+
+                    // Save result for the share sheet
+                    gridResults[activePosition] = data.is_highest_war ? "🟦" : "🟩";
+                    checkGameComplete();
+
+                    activePosition = null;
+                    document.getElementById('active-pos-display').innerText = "Select a position";
+                    document.getElementById('active-category-display').innerText = "Click an open square on the field.";
+                    document.getElementById('playerName').disabled = true;
+                    document.getElementById('seasonYear').disabled = true;
+
+                    
+                } else {
+                    const isHardMode = document.getElementById('hardModeToggle').checked;
+
+                    if (isHardMode) {
+                        // Hard Mode: Lock the square as a failure
+                        messageBoard.innerHTML = `<span class="error">${data.message} <br><strong>Square locked!</strong></span>`;
+                        
+                        const positionIds = { "1B": "first-base", "2B": "second-base", "3B": "third-base" };
+                        const targetId = positionIds[activePosition] || activePosition;
+                        const square = document.getElementById(targetId);
+                        
+                        square.classList.add('failed');
+                        square.classList.remove('active');
+                        
+                        // Show an "X" or "MISSED" in the square
+                        const resultDiv = document.getElementById(`result-${activePosition}`);
+                        if (!resultDiv) {
+                            const newResultDiv = document.createElement('div');
+                            newResultDiv.className = 'pos-result';
+                            newResultDiv.id = `result-${activePosition}`;
+                            square.appendChild(newResultDiv);
+                        }
+                        
+                        document.getElementById(`result-${activePosition}`).style.display = 'block';
+                        document.getElementById(`result-${activePosition}`).innerHTML = `<strong style="color: #dc3545; font-size: 1.2em;">MISSED</strong><br>0.00 WAR`;
+                        
+                        // Hide the original text
+                        square.querySelector('.pos-title').style.display = 'none';
+                        square.querySelector('.pos-desc').style.display = 'none';
+
+                        // Save failure for the share sheet
+                        gridResults[activePosition] = "🟥";
+                        checkGameComplete();
+
+                        // Reset the control panel
+                        activePosition = null;
+                        document.getElementById('active-pos-display').innerText = "Select a position";
+                        document.getElementById('active-category-display').innerText = "Click an open square on the field.";
+                        document.getElementById('playerName').disabled = true;
+                        document.getElementById('seasonYear').disabled = true;
+                        submitBtn.disabled = true;
+
+                        
+
+                    } else {
+                        // Normal Mode: Just show the error and let them try again
+                        messageBoard.innerHTML = `<span class="error">${data.message}</span>`;
+                        submitBtn.disabled = false;
+                    }
+                }
+                
+
+            } catch (error) {
+                messageBoard.innerHTML = `<span class="error">Server Error: Make sure your Python Flask backend is running on port 5000.</span>`;
+                console.error(error);
+                submitBtn.disabled = false;
+            }
+
+            submitBtn.innerText = "Submit Guess";
+        }
+
+        // Check if the board is full
+        function checkGameComplete() {
+            completedSquares++;
+            if (completedSquares === 9) {
+                setTimeout(() => {
+                    document.getElementById('final-score').innerText = totalWar.toFixed(2);
+                    document.getElementById('summaryModal').style.display = 'flex';
+                }, 1000); // 1-second delay so they can see their final square lock in
+            }
+        }
+
+        // Surrender the remaining squares and end the game
+        function giveUpGame() {
+            if (!confirm("Are you sure you want to give up? This will lock all remaining empty squares.")) {
+                return;
+            }
+
+            const positions = ["C", "1B", "2B", "3B", "SS", "LF", "CF", "RF", "P"];
+            const positionIds = { "1B": "first-base", "2B": "second-base", "3B": "third-base" };
+
+            positions.forEach(pos => {
+                const targetId = positionIds[pos] || pos;
+                const square = document.getElementById(targetId);
+
+                // If the square hasn't been successfully guessed or failed yet
+                if (!square.classList.contains('locked') && !square.classList.contains('optimal') && !square.classList.contains('failed')) {
+                    square.classList.remove('active');
+                    square.classList.add('failed');
+
+                    let resultDiv = document.getElementById(`result-${pos}`);
+                    if (!resultDiv) {
+                        resultDiv = document.createElement('div');
+                        resultDiv.className = 'pos-result';
+                        resultDiv.id = `result-${pos}`;
+                        square.appendChild(resultDiv);
+                    }
+                    
+                    resultDiv.style.display = 'block';
+                    resultDiv.innerHTML = `<strong style="color: #dc3545; font-size: 1.1em;">GAVE UP</strong><br>0.00 WAR`;
+                    
+                    // Hide the original text
+                    square.querySelector('.pos-title').style.display = 'none';
+                    square.querySelector('.pos-desc').style.display = 'none';
+
+                    // Mark as blank/black square for the share sheet
+                    gridResults[pos] = "⬛";
+                    completedSquares++;
+                }
+            });
+
+            // Lock the control panel inputs
+            activePosition = null;
+            document.getElementById('active-pos-display').innerText = "Game Over";
+            document.getElementById('active-category-display').innerText = "You surrendered.";
+            document.getElementById('playerName').disabled = true;
+            document.getElementById('seasonYear').disabled = true;
+            document.getElementById('submitBtn').disabled = true;
+            document.getElementById('giveUpBtn').disabled = true;
+
+            // Trigger the end-game modal immediately
+            if (completedSquares === 9) {
+                setTimeout(() => {
+                    document.getElementById('final-score').innerText = totalWar.toFixed(2);
+                    document.getElementById('summaryModal').style.display = 'flex';
+                }, 800);
+            }
+        }
+
+        // Generate the emoji share string
+        function shareScore() {
+            const dateStr = `${today.getFullYear()}-${(today.getMonth() + 1).toString().padStart(2, '0')}-${today.getDate().toString().padStart(2, '0')}`;
+            
+            // Format to resemble the field layout
+            let shareText = `Diamond in the Rough - ${dateStr}\n`;
+            shareText += `Total WAR: ${totalWar.toFixed(2)}\n\n`;
+            
+            shareText += `${gridResults["LF"] || "⬛"} ${gridResults["CF"] || "⬛"} ${gridResults["RF"] || "⬛"}\n`;
+            shareText += `${gridResults["3B"] || "⬛"} ${gridResults["SS"] || "⬛"} ${gridResults["2B"] || "⬛"} ${gridResults["1B"] || "⬛"}\n`;
+            shareText += `  ${gridResults["P"] || "⬛"}  \n`;
+            shareText += `  ${gridResults["C"] || "⬛"}  \n`;
+
+            navigator.clipboard.writeText(shareText).then(() => {
+                const btn = document.querySelector('.btn-share');
+                btn.innerText = "Copied to Clipboard!";
+                setTimeout(() => btn.innerText = "Share Score", 2000);
+            });
+        }
+
+        // Fetch the optimal lineup from the Python backend
+        async function showOptimal() {
+            const btn = document.querySelector('.btn-optimal');
+            btn.disabled = true;
+            btn.innerText = "Loading...";
+
+            try {
+                const response = await fetch('http://127.0.0.1:5000/api/optimal', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(gameConfig)
+                });
+                
+                const optimalData = await response.json();
+                
+                let listHtml = "<strong>Maximum Possible WAR:</strong><br><br>";
+                const order = ["C", "1B", "2B", "3B", "SS", "LF", "CF", "RF", "P"];
+                
+                order.forEach(pos => {
+                    listHtml += `<strong>${pos}:</strong> ${optimalData[pos]}<br>`;
+                });
+                
+                document.getElementById('optimal-list').innerHTML = listHtml;
+                document.getElementById('optimal-list').style.display = 'block';
+                btn.style.display = 'none'; // Hide the button once loaded
+                
+            } catch (error) {
+                btn.innerText = "Error loading optimal lineup";
+                btn.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>
+
