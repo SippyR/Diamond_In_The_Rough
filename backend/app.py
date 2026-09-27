@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import psycopg2
+from psycopg2 import pool
 from psycopg2.extras import RealDictCursor
 import urllib.parse
 
@@ -10,6 +11,8 @@ load_dotenv()
 
 # Check if we are on Render or Local
 database_url = os.environ.get("DATABASE_URL")
+
+db_pool = None
 
 try:
     if database_url:
