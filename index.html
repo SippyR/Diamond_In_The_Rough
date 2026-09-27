@@ -379,6 +379,7 @@
             <label for="playerName">Player Name</label>
             <div class="autocomplete-wrapper">
                 <input type="text" id="playerName" placeholder="e.g., Albert Pujols" disabled autocomplete="off">
+                <!-- THIS is the line your JavaScript is looking for: -->
                 <ul id="autocomplete-list" class="autocomplete-items"></ul>
             </div>
         </div>
@@ -510,7 +511,7 @@
             }
 
             try {
-                const response = await fetch(`http://127.0.0.1:5000/api/autocomplete?q=${encodeURIComponent(val)}`);
+                const response = await fetch(`https://diamond-in-the-rough.onrender.com/api/autocomplete?q=${encodeURIComponent(val)}`);
                 const data = await response.json();
                 
                 autocompleteList.innerHTML = ''; // Clear old results
@@ -607,7 +608,7 @@
             };
 
             try {
-                const response = await fetch('http://127.0.0.1:5000/api/validate', {
+                const response = await fetch('https://diamond-in-the-rough.onrender.com/api/validate', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
@@ -849,7 +850,7 @@
             btn.innerText = "Loading...";
 
             try {
-                const response = await fetch('http://127.0.0.1:5000/api/optimal', {
+                const response = await fetch('https://diamond-in-the-rough.onrender.com/api/optimal', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(gameConfig)
